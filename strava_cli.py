@@ -319,6 +319,15 @@ def upload_file(config):
         print("❌ File does not exist!")
         return
     
+    # Check if already uploaded
+    filesize = os.path.getsize(path)
+    filenamewithext = os.path.basename(path)
+    if is_already_uploaded(filenamewithext, filesize):
+        print(f"⚠ File already uploaded: {idx}/{len(files)}: {os.path.basename(path)}")
+        return
+    else:
+        print(f"\nUploading file {idx}/{len(files)}: {os.path.basename(path)}")
+    
     # Get filename without extension for title
     filename = os.path.splitext(os.path.basename(path))[0]
     description = ""
@@ -332,12 +341,6 @@ def upload_file(config):
     else:
         data_type = ext.lstrip(".")
         activity_type = "Workout"
-    
-    # Check if already uploaded
-    filesize = os.path.getsize(path)
-    if is_already_uploaded(filename, filesize):
-        print(f"⚠ File already uploaded: {filename}")
-        return
     
     check_token(config)
     
@@ -398,7 +401,14 @@ def upload_folder(config):
     print(f"📂 Found {len(files)} files. Starting upload with 6s delay...")
 
     for idx, path in enumerate(files, start=1):
-        print(f"\nUploading file {idx}/{len(files)}: {os.path.basename(path)}")
+        # Check if already uploaded
+        filesize = os.path.getsize(path)
+        filenamewithext = os.path.basename(path)
+        if is_already_uploaded(filenamewithext, filesize):
+            print(f"⚠ File already uploaded: {idx}/{len(files)}: {os.path.basename(path)}")
+            continue
+        else:
+            print(f"\nUploading file {idx}/{len(files)}: {os.path.basename(path)}")
 
 
         # Get filename without extension for title
@@ -414,12 +424,6 @@ def upload_folder(config):
         else:
             data_type = ext.lstrip(".")
             activity_type = "Workout"
-        
-        # Check if already uploaded
-        filesize = os.path.getsize(path)
-        if is_already_uploaded(filename, filesize):
-            print(f"⚠ File already uploaded: {filename}")
-            return
         
         check_token(config)
 
