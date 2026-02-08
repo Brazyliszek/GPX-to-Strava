@@ -7,6 +7,8 @@ from pathlib import Path
 import math
 from collections import Counter
 from datetime import datetime
+import gzip
+import tempfile
 
 CONFIG_FILE = "strava_config.txt"
 UPLOADED_LOG = "uploaded_activities.txt"
@@ -415,48 +417,87 @@ def upload_folder(config):
         filename = os.path.splitext(os.path.basename(path))[0]
         description = ""
         
-        # Determine activity type from file
+        # Get extension
         ext = os.path.splitext(path)[1].lower()
-        
+
+        # Determine activity type from file
         if ext == ".gpx":
             data_type = "gpx"
             activity_type = determine_gpx_activity(path)
         else:
             data_type = ext.lstrip(".")
             activity_type = "Workout"
+    
+        # Sprawdź czy plik jest skompresowany gzip
+        is_gzipped = ext == '.gz'
         
-        check_token(config)
-
-        ext = os.path.splitext(path)[1].lower()
-        if ext in [".gpx"]:
-            data_type = "gpx"
-        elif ext in [".tcx"]:
-            data_type = "tcx"
-        elif ext in [".fit"]:
-            data_type = "fit"
-        elif ext.endswith(".gz"):
-            if ".gpx" in ext:
-                data_type = "gpx.gz"
-            elif ".tcx" in ext:
-                data_type = "tcx.gz"
-            elif ".fit" in ext:
-                data_type = "fit.gz"
+        # Określ typ danych na podstawie nazwy pliku
+        if is_gzipped:
+            # Pobierz podstawowe rozszerzenie (przed .gz)
+            base_name = os.path.splitext(path)[0]  # usuwa .gz
+            base_ext = os.path.splitext(base_name)[1].lower()
+            
+            if base_ext == ".gpx":
+                data_type = "gpx"
+            elif base_ext == ".tcx":
+                data_type = "tcx"
+            elif base_ext == ".fit":
+                data_type = "fit"
+            else:
+                data_type = "gpx"  # domyślny
         else:
-            data_type = "gpx"
+            # Oryginalna logika dla nieskompresowanych plików
+            if ext in [".gpx"]:
+                data_type = "gpx"
+            elif ext in [".tcx"]:
+                data_type = "tcx"
+            elif ext in [".fit"]:
+                data_type = "fit"
+            else:
+                data_type = "gpx"
 
         try:
-            with open(path, "rb") as f:
-                r = requests.post(
-                    f"{API_BASE}/api/v3/uploads",
-                    headers={"Authorization": f"Bearer {config['access_token']}"},
-                    files={"file": f},
-                    data={
-                        "data_type": data_type,
-                        "name": filename,
-                        "description": description,
-                        "activity_type": activity_type
-                    },
-                )
+            if is_gzipped:
+                # Rozpakuj plik .gz do tymczasowego pliku
+                with gzip.open(path, 'rb') as gz_file:
+                    file_content = gz_file.read()
+                    
+                # Użyj tymczasowego pliku do uploadu
+                with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix=base_ext) as tmp_file:
+                    tmp_file.write(file_content)
+                    tmp_path = tmp_file.name
+                
+                try:
+                    with open(tmp_path, "rb") as f:
+                        r = requests.post(
+                            f"{API_BASE}/api/v3/uploads",
+                            headers={"Authorization": f"Bearer {config['access_token']}"},
+                            files={"file": f},
+                            data={
+                                "data_type": data_type,
+                                "name": os.path.splitext(filename)[0],  # usuń .gz z nazwy
+                                "description": description,
+                                "activity_type": activity_type
+                            },
+                        )
+                finally:
+                    # Posprzątaj tymczasowy plik
+                    os.unlink(tmp_path)
+            else:
+                # Oryginalny kod dla nieskompresowanych plików
+                with open(path, "rb") as f:
+                    r = requests.post(
+                        f"{API_BASE}/api/v3/uploads",
+                        headers={"Authorization": f"Bearer {config['access_token']}"},
+                        files={"file": f},
+                        data={
+                            "data_type": data_type,
+                            "name": filename,
+                            "description": description,
+                            "activity_type": activity_type
+                        },
+                    )
+            
             response = r.json()
             print("📤 Upload response:")
             print(response)
@@ -464,8 +505,10 @@ def upload_folder(config):
             if "id" in response or "activity_id" in response:
                 log_uploaded_file(path)
                 print("✅ File successfully uploaded and logged!")
-                
+
+            print("⏳ Waiting 2 seconds...")
             print("\n")
+            time.sleep(2)
             
         except Exception as e:
             print(f"❌ Error uploading {path}: {e}")
@@ -473,10 +516,6 @@ def upload_folder(config):
 
 
 
-
-
-        print("⏳ Waiting 6 seconds...")
-        time.sleep(6)
 
     print("\n✅ All files processed.")
 
